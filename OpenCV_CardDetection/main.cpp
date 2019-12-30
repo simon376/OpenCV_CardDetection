@@ -21,6 +21,8 @@ using namespace std;
 double CARD_MAX_AREA = 120000;
 double CARD_MIN_AREA = 25000;
 
+const int IS_COLOR_THRESH = 100;
+
 const int MAX_LOW_THRESH = 255;
 int thresh = 100;
 RNG random(12345);
@@ -40,6 +42,7 @@ bool process_contour(vector<Point>& contour);
 
 void sort_corners(vector <Point2f> & corners);
 Mat flatten(vector <Point2f>& corners);
+bool is_color(Mat bgr_image, Scalar color, int threshold);
 
 int main(int argc, char** argv)
 {
@@ -54,7 +57,7 @@ int main(int argc, char** argv)
 	/*	---------		CHANGE deviceID to 0 for default front camera! my laptop has a second one on the back i use!	--------- */
 
 	int deviceID = 1;             // 0 = open default camera
-	int apiID = cv::CAP_ANY;      // 0 = autodetect default API
+	int apiID = CAP_ANY;      // 0 = autodetect default API
 	// open selected camera using selected API
 	cap.open(deviceID + apiID);
 	// check if we succeeded
@@ -96,12 +99,12 @@ int main(int argc, char** argv)
 		filter_cards(out_canny);
 
 
-		cv::putText(frame,
+		putText(frame,
 			no_cards,
-			cv::Point(5, 20), // Coordinates
-			cv::FONT_HERSHEY_COMPLEX_SMALL, // Font
+			Point(5, 20), // Coordinates
+			FONT_HERSHEY_COMPLEX_SMALL, // Font
 			1.0, // Scale. 2.0 = 2x bigger
-			cv::Scalar(255, 255, 255), // BGR Color
+			Scalar(255, 255, 255), // BGR Color
 			1, // Line Thickness (Optional)
 			LINE_AA); // Anti-alias (Optional)
 
@@ -157,6 +160,30 @@ void filter_cards(Mat& image)
 
 }
 
+bool is_color(Mat bgr_image, Scalar low, Scalar high, Scalar low2 = Scalar(), Scalar high2 = Scalar())
+{
+	// convert to Hue-Saturation-Value color space
+	Mat hsv;
+	cvtColor(bgr_image, hsv, COLOR_BGR2HSV);
+
+	Mat mask, mask2;
+	inRange(hsv, low, high, mask);
+	// if additional parameters are given, do it again
+	if ((low != Scalar()) && (high != Scalar()))
+	{
+		inRange(hsv, low2, high2, mask2);
+		mask += mask2;
+	}
+	imshow("mask", mask);
+	
+	// random value > 0 used rn.. - if hue value exists aka mask is not empty
+	if (sum(mask)[0] > IS_COLOR_THRESH)
+		return true;
+	else
+		return false;
+
+}
+
 // process the contour, returns true and creates a flattened image if it's probably a card
 bool process_contour(vector<Point>& contour)
 {
@@ -172,6 +199,26 @@ bool process_contour(vector<Point>& contour)
 		sort_corners(poly);
 		Mat flatImage = flatten(poly);
 		
+		// Get mass center
+		Point2f center(0, 0);
+		for (int i = 0; i < poly.size(); i++)
+			center += poly[i];
+		center *= (1. / poly.size());
+		String textcolor = "black";
+		// test: check if red color, using two upper/lower limits
+		if (is_color(flatImage, Scalar(0, 120, 70), Scalar(10, 255, 255), Scalar(170, 120, 70), Scalar(180, 255, 255)))
+			textcolor = "red";
+
+		putText(frame,
+			textcolor,
+			center, // Coordinates
+			FONT_HERSHEY_COMPLEX_SMALL, // Font
+			1.0, // Scale. 2.0 = 2x bigger
+			Scalar(0,0,0), // BGR Color
+			1, // Line Thickness (Optional)
+			LINE_AA); // Anti-alias (Optional)
+
+
 		imshow(format(window_name_card, noCards), flatImage);
 
 		return true;
@@ -188,7 +235,7 @@ void sort_corners(vector <Point2f>& corners)
 
 	vector<Point2f> top, bot;
 	// Get mass center
-	cv::Point2f center(0, 0);
+	Point2f center(0, 0);
 	for (int i = 0; i < corners.size(); i++)
 		center += corners[i];
 	center *= (1. / corners.size());
@@ -200,10 +247,25 @@ void sort_corners(vector <Point2f>& corners)
 		else
 			bot.push_back(corner);
 	}
-	cv::Point2f tl = top[0].x > top[1].x ? top[1] : top[0];
-	cv::Point2f tr = top[0].x > top[1].x ? top[0] : top[1];
-	cv::Point2f bl = bot[0].x > bot[1].x ? bot[1] : bot[0];
-	cv::Point2f br = bot[0].x > bot[1].x ? bot[0] : bot[1];
+	Point2f tl = top[0].x > top[1].x ? top[1] : top[0];
+	Point2f tr = top[0].x > top[1].x ? top[0] : top[1];
+	Point2f bl = bot[0].x > bot[1].x ? bot[1] : bot[0];
+	Point2f br = bot[0].x > bot[1].x ? bot[0] : bot[1];
+
+	Point2f top_edge = tr - tl;
+	double top_dist =  sqrt(top_edge.x * top_edge.x + top_edge.y * top_edge.y);
+	Point2f left_edge = bl - tl;
+	double left_dist =  sqrt(left_edge.x * left_edge.x + left_edge.y * left_edge.y);
+
+	// if the left side edge is shorter than the top, rotate the point assignments to make the shorter edge the top one
+	if (left_dist < top_dist) {
+		Point2f temp_tl = tl;
+		tl = bl;
+		bl = br;
+		br = tr;
+		tr = temp_tl;
+	}
+		
 
 	corners.clear();
 	corners.push_back(bl);
