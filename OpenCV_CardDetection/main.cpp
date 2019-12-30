@@ -12,14 +12,12 @@
 #include "opencv2/highgui/highgui.hpp"
 
 
-// If you want to "simplify" code writing, you might want to use:
 
 using namespace cv;
-
 using namespace std;
 
 
-// TODO probably wrong
+// TODO 
 double CARD_MAX_AREA = 120000;
 double CARD_MIN_AREA = 25000;
 
@@ -52,6 +50,9 @@ int main(int argc, char** argv)
 	// open the default camera using default API
 	// cap.open(0);
 	// OR advance usage: select any API backend
+
+	/*	---------		CHANGE deviceID to 0 for default front camera! my laptop has a second one on the back i use!	--------- */
+
 	int deviceID = 1;             // 0 = open default camera
 	int apiID = cv::CAP_ANY;      // 0 = autodetect default API
 	// open selected camera using selected API
@@ -67,7 +68,6 @@ int main(int argc, char** argv)
 
 	cap.read(frame);
 	out_canny = Mat::zeros(frame.size(), CV_8U);
-	//Mat r(frame.size(), CV_8U), g(frame.size(), CV_8U), b(frame.size(), CV_8U);
 
 	createTrackbar("Min Treshold:", window_name_canny, &thresh, MAX_LOW_THRESH, canny_threshold_callback);
 	canny_threshold_callback(0, 0);
@@ -85,13 +85,16 @@ int main(int argc, char** argv)
 			cerr << "ERROR! blank frame grabbed\n";
 			break;
 		}
+
 		//greyscale
 		//cvtColor(frame, src_grey, COLOR_BGR2GRAY);
+
 		// Blur a bit
 		blur(frame, frame, Size(3, 3));
 		//use canny edge detection to filter edges
 		canny_threshold_callback(0, 0);
 		filter_cards(out_canny);
+
 
 		cv::putText(frame,
 			no_cards,
@@ -102,12 +105,12 @@ int main(int argc, char** argv)
 			1, // Line Thickness (Optional)
 			LINE_AA); // Anti-alias (Optional)
 
-		//drawContours(frame, contours, -1, color, FILLED, LINE_8, hierarchy);
+
 		imshow(window_name_cam, frame);
 
 		imshow(window_name_canny, out_canny);
 
-		// show live and wait for a key with timeout long enough to show images
+		// show and wait for a key with timeout long enough to show images
 
 		if (waitKey(5) >= 0)
 			break;
@@ -117,6 +120,44 @@ int main(int argc, char** argv)
 
 }
 
+
+// Tries to find card contours in the given image
+void filter_cards(Mat& image) 
+{
+	noCards = 0;
+
+	vector<vector<Point> > contours;
+	vector<Vec4i> hierarchy;
+	Scalar color(0, 0, 255);
+
+	// only retrieves the external contour for now
+	findContours(image, contours, hierarchy, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
+	if (contours.empty())
+		return;
+	
+	vector<vector<Point> > cardContours;
+
+
+	//sort by contour area size
+	sort(contours.begin(), contours.end(), [](const vector<Point>& a, const vector<Point>& b) { return contourArea(a) > contourArea(b); });
+
+	// determine if they're cards by 3 criterias:
+	// 1 & 2) inside size bounds 3) no parents 4) four corners
+	for each (auto contour in contours)
+	{
+		if (process_contour(contour)) {
+			cardContours.push_back(contour);
+			noCards++;
+		}
+	}
+	
+	no_cards = format("Detected closed contours: %d",(int) cardContours.size());
+
+	drawContours(frame, cardContours, -1, color, 2, LINE_8);
+
+}
+
+// process the contour, returns true and creates a flattened image if it's probably a card
 bool process_contour(vector<Point>& contour)
 {
 	double size = contourArea(contour);
@@ -139,10 +180,12 @@ bool process_contour(vector<Point>& contour)
 	return false;
 }
 
-
 // sorts corners into bottomLeft, topLeft, topRight, bottomRight.
 void sort_corners(vector <Point2f>& corners)
 {
+	// there has to be a beter way than this
+
+
 	vector<Point2f> top, bot;
 	// Get mass center
 	cv::Point2f center(0, 0);
@@ -157,7 +200,6 @@ void sort_corners(vector <Point2f>& corners)
 		else
 			bot.push_back(corner);
 	}
-	// das geht besser
 	cv::Point2f tl = top[0].x > top[1].x ? top[1] : top[0];
 	cv::Point2f tr = top[0].x > top[1].x ? top[0] : top[1];
 	cv::Point2f bl = bot[0].x > bot[1].x ? bot[1] : bot[0];
@@ -170,19 +212,18 @@ void sort_corners(vector <Point2f>& corners)
 	corners.push_back(br);
 }
 
+// use the list of 4 cornerpoints of a card inside the global frame to return a transformed image of the card only
 Mat flatten(vector <Point2f>& corners)
 {
 	// Create a rectangle from the contour with correct numbering 
-	Point2f src[4];
-	src[0] = corners[0];
-	src[1] = corners[1];
-	src[2] = corners[2];
-	src[3] = corners[3];
+	Point2f* src = corners.data();
 
+	//draw the outline on the global frame
 	for (int i = 0; i < 4; i++) {
 		line(frame, src[i], src[(i + 1) % 4], Scalar(128, 0, 255));
 	}
 
+	// pixel size of the resulting card image
 	int maxWidth = 200, maxHeight = 300;
 
 	Point2f dest[4];
@@ -190,7 +231,7 @@ Mat flatten(vector <Point2f>& corners)
 	dest[1] = Point2f(0,0);
 	dest[2] = Point2f(maxWidth-1,0);
 	dest[3] = Point2f(maxWidth-1,maxHeight-1);
-	// need 4 pairs of corresponding In/Out points
+	// needs 4 pairs of corresponding In/Out points
 	Mat M = getPerspectiveTransform(src,dest);
 	   
 	Mat output;
@@ -199,45 +240,15 @@ Mat flatten(vector <Point2f>& corners)
 	return output;
 }
 
-void filter_cards(Mat& image) 
-{
-	noCards = 0;
-
-	vector<vector<Point> > contours;
-	vector<Vec4i> hierarchy;
-	Scalar color(0, 0, 255);
-
-	findContours(image, contours, hierarchy, RETR_TREE, CHAIN_APPROX_SIMPLE);
-	if (contours.empty())
-		return;
-	
-	vector<vector<Point> > cardContours;
-
-	//TODO: zip contours & hierachys and sort both
-
-	//sort by contour area size
-	sort(contours.begin(), contours.end(), [](const vector<Point>& a, const vector<Point>& b) { return contourArea(a) > contourArea(b); });
-
-	// determine if they're cards by 3 criterias:
-	// 1 & 2) inside size bounds 3) no parents 4) four corners
-	for each (auto contour in contours)
-	{
-		if (process_contour(contour)) {
-			cardContours.push_back(contour);
-			noCards++;
-		}
-	}
-	
-	no_cards = format("Detected closed contours: %d",(int) cardContours.size());
-
-	drawContours(frame, cardContours, -1, color, 2, LINE_8);
-
-}
-
+// Trackbar callback method
 void canny_threshold_callback(int, void*)
 {
 	// Canny Edge Detection
 	Canny(frame, out_canny, thresh, thresh * 2);
+
+
+
+	// not used anymore:
 
 	// create approx polygons with closed curves
 	//vector<vector<Point> > contours_poly(contours.size());
