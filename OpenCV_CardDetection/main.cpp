@@ -3,7 +3,7 @@
 
 */
 #include <iostream>
-
+#include <chrono>
 
 #include "opencv2/core/core.hpp"
 
@@ -31,9 +31,10 @@ const char* window_name_canny = "Canny";
 const char* window_name_card = "Card %d";
 
 String no_cards = "Detected cards: X";
-int noCards = 0;
 
 Mat frame, out_canny;
+
+vector<Mat> cards;
 
 void canny_threshold_callback(int, void*);
 void filter_cards(Mat& image);
@@ -43,6 +44,52 @@ bool process_contour(vector<Point>& contour);
 void sort_corners(vector <Point2f> & corners);
 Mat flatten(vector <Point2f>& corners);
 bool is_color(Mat bgr_image, Scalar color, int threshold);
+
+void capture_image(VideoCapture& video)
+{
+	if (!video.isOpened())
+		return;
+	// use this as a callback function when a keyboardbutton (space) is pressed
+
+	// wait for keyboard input and then save the current detected cards as images, with current timestamp
+	// do some thresholding before to get clearer results
+	
+	// grab maybe 10 or so images and combine them into one for better result
+	Mat image, temp;
+	video >> image;
+	for (size_t i = 0; i < 10; i++)
+	{
+		video >> temp;
+		image += temp;
+	}
+
+	// build file name
+	String baseFilename = "img_";
+	time_t seconds;
+	time(&seconds);
+	stringstream ss;
+	ss << baseFilename << seconds;
+
+	// write the image
+	imwrite(ss.str(), image);
+
+}
+
+void compare_to_known_images(Mat image) 
+{
+	// load the reference images - do only on the first time
+
+	// compare to every reference image
+
+	// return index of the image with largest overlap, if above a certain threshold
+	// or return the string describing it or sth, no need for OO for this prototype
+}
+
+void setup_reference_images()
+{
+	// load all the references into memory
+	// for all files in the folder (how?) - imread
+}
 
 int main(int argc, char** argv)
 {
@@ -65,7 +112,6 @@ int main(int argc, char** argv)
 		cerr << "ERROR! Unable to open camera\n";
 		return -1;
 	}
-
 
 
 
@@ -127,7 +173,6 @@ int main(int argc, char** argv)
 // Tries to find card contours in the given image
 void filter_cards(Mat& image) 
 {
-	noCards = 0;
 
 	vector<vector<Point> > contours;
 	vector<Vec4i> hierarchy;
@@ -150,13 +195,17 @@ void filter_cards(Mat& image)
 	{
 		if (process_contour(contour)) {
 			cardContours.push_back(contour);
-			noCards++;
 		}
 	}
 	
 	no_cards = format("Detected closed contours: %d",(int) cardContours.size());
 
 	drawContours(frame, cardContours, -1, color, 2, LINE_8);
+
+	for (int i = 0; i < cards.size(); i++)
+	{
+		imshow(format(window_name_card, i), cards[i]);
+	}
 
 }
 
@@ -219,7 +268,7 @@ bool process_contour(vector<Point>& contour)
 			LINE_AA); // Anti-alias (Optional)
 
 
-		imshow(format(window_name_card, noCards), flatImage);
+		cards.push_back(flatImage);
 
 		return true;
 	}
