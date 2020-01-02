@@ -338,3 +338,7 @@ ASALocalRun/
 
 # BeatPulse healthcheck temp database
 healthchecksdb
+/OpenCV_CardDetection/Debug_Capture/OpenCV_C.4B661609.tlog
+/OpenCV_CardDetection/Debug_Capture/vc142.idb
+/OpenCV_CardDetection/Debug_Capture
+/OpenCV_CardDetection/images
