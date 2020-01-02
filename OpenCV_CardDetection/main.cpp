@@ -3,13 +3,14 @@
 
 */
 #include <iostream>
-
+#include <chrono>
 
 #include "opencv2/core/core.hpp"
 
 #include "opencv2/imgproc/imgproc.hpp"
 
 #include "opencv2/highgui/highgui.hpp"
+#include "opencv2/core/utils/filesystem.hpp"
 
 
 
@@ -31,21 +32,105 @@ const char* window_name_canny = "Canny";
 const char* window_name_card = "Card %d";
 
 String no_cards = "Detected cards: X";
-int noCards = 0;
+String ref_folder = "images";
 
 Mat frame, out_canny;
 
-void canny_threshold_callback(int, void*);
-void filter_cards(Mat& image);
+bool isCaptureMode = false;
 
-bool process_contour(vector<Point>& contour);
+vector<Mat> cards;
+vector<Mat> card_references;
+
+void canny_threshold_callback(int, void*);
+void filter_cards(const Mat& image);
+
+bool process_contour(const vector<Point>& contour);
 
 void sort_corners(vector <Point2f> & corners);
 Mat flatten(vector <Point2f>& corners);
-bool is_color(Mat bgr_image, Scalar color, int threshold);
+bool is_color(const Mat& bgr_image, Scalar low, Scalar high, Scalar low2, Scalar high2);
+
+
+/* saves all images of currently detected cards into the /images/ folder for use as a reference to compare to*/
+void save_cards()
+{
+
+	// build file name
+	String baseFilename = "img_";
+	String filetype = ".png";
+	time_t seconds;
+	stringstream ss;
+
+
+	cv::utils::fs::createDirectory(ref_folder);
+
+	for (int i = 0; i < cards.size(); i++) {
+		// reset stringstream
+		ss.str(std::string());
+		ss.clear();
+
+		time(&seconds);
+		ss << ref_folder << "/" << baseFilename << seconds << "_" << i << filetype;
+
+		// TODO: do some thresholding / image processing to improve picture
+
+		// write the image
+		if (!imwrite(ss.str(), cards[i])) {
+			cerr << "ERROR! Unable to write to path " << ss.str() << "\n";
+			return;
+		}
+	}
+
+	cout << "saved card images to folder " << ref_folder << "\n";
+
+}
+
+void compare_to_known_images(const Mat& image) 
+{
+	// load the reference images - do only on the first time
+
+	// compare to every reference image
+	for (const auto& ref : card_references) 
+	{
+		// maybe resize to make sure its the same
+		// check overlap
+
+		// return some value if it matches a known reference card good enough
+	}
+	// return index of the image with largest overlap, if above a certain threshold
+	// or return the string describing it or sth, no need for OO for this prototype
+
+}
+
+void setup_reference_images()
+{
+	// load all the reference images
+	card_references.clear();
+
+	vector<cv::String> fn;
+	glob((ref_folder + "/*.png"), fn, false);
+
+	size_t count = fn.size(); //number of png files in images folder
+	for (size_t i = 0; i < count; i++)
+		card_references.push_back(imread(fn[i]));
+}
 
 int main(int argc, char** argv)
 {
+	for (int i = 0; i < argc; i++)
+	{
+		// output parameters
+		std::cout << i << " \"" << argv[i] << "\"" << std::endl;
+		// check parameter
+		if (strcmp(argv[i], "-capture") == 0)
+		{
+			isCaptureMode = true;
+			std::cout << "\n\n card capture mode set! press space to save current detected cards" << std::endl;
+		}
+	}
+
+
+
 	namedWindow(window_name_cam, WINDOW_AUTOSIZE); // Create Window
 	namedWindow(window_name_canny, WINDOW_AUTOSIZE); // Create Window
 	//--- INITIALIZE VIDEOCAPTURE
@@ -66,8 +151,7 @@ int main(int argc, char** argv)
 		return -1;
 	}
 
-
-
+	setup_reference_images();
 
 	cap.read(frame);
 	out_canny = Mat::zeros(frame.size(), CV_8U);
@@ -88,6 +172,9 @@ int main(int argc, char** argv)
 			cerr << "ERROR! blank frame grabbed\n";
 			break;
 		}
+
+		// reset the list of cards
+		cards.clear();
 
 		//greyscale
 		//cvtColor(frame, src_grey, COLOR_BGR2GRAY);
@@ -114,8 +201,9 @@ int main(int argc, char** argv)
 		imshow(window_name_canny, out_canny);
 
 		// show and wait for a key with timeout long enough to show images
-
-		if (waitKey(5) >= 0)
+		if (isCaptureMode && waitKey(5) == 32)
+			save_cards();
+		else if (waitKey(5) >= 0)
 			break;
 	}
 	// the camera will be deinitialized automatically in VideoCapture destructor
@@ -125,9 +213,8 @@ int main(int argc, char** argv)
 
 
 // Tries to find card contours in the given image
-void filter_cards(Mat& image) 
+void filter_cards(const Mat& image) 
 {
-	noCards = 0;
 
 	vector<vector<Point> > contours;
 	vector<Vec4i> hierarchy;
@@ -146,11 +233,10 @@ void filter_cards(Mat& image)
 
 	// determine if they're cards by 3 criterias:
 	// 1 & 2) inside size bounds 3) no parents 4) four corners
-	for each (auto contour in contours)
+	for(const auto& contour : contours)
 	{
 		if (process_contour(contour)) {
 			cardContours.push_back(contour);
-			noCards++;
 		}
 	}
 	
@@ -158,9 +244,14 @@ void filter_cards(Mat& image)
 
 	drawContours(frame, cardContours, -1, color, 2, LINE_8);
 
+	for (int i = 0; i < cards.size(); i++)
+	{
+		imshow(format(window_name_card, i), cards[i]);
+	}
+
 }
 
-bool is_color(Mat bgr_image, Scalar low, Scalar high, Scalar low2 = Scalar(), Scalar high2 = Scalar())
+bool is_color(const Mat& bgr_image, Scalar low, Scalar high, Scalar low2 = Scalar(), Scalar high2 = Scalar())
 {
 	// convert to Hue-Saturation-Value color space
 	Mat hsv;
@@ -185,7 +276,7 @@ bool is_color(Mat bgr_image, Scalar low, Scalar high, Scalar low2 = Scalar(), Sc
 }
 
 // process the contour, returns true and creates a flattened image if it's probably a card
-bool process_contour(vector<Point>& contour)
+bool process_contour(const vector<Point>& contour)
 {
 	double size = contourArea(contour);
 	double peri = arcLength(contour, true);
@@ -219,7 +310,9 @@ bool process_contour(vector<Point>& contour)
 			LINE_AA); // Anti-alias (Optional)
 
 
-		imshow(format(window_name_card, noCards), flatImage);
+		compare_to_known_images(flatImage);	// TODO: return value which describes the corresponding card
+
+		cards.push_back(flatImage);
 
 		return true;
 	}
@@ -240,7 +333,7 @@ void sort_corners(vector <Point2f>& corners)
 		center += corners[i];
 	center *= (1. / corners.size());
 
-	for each (auto corner in corners)
+	for (const auto & corner : corners)
 	{
 		if (corner.y < center.y)
 			top.push_back(corner);
@@ -308,21 +401,4 @@ void canny_threshold_callback(int, void*)
 	// Canny Edge Detection
 	Canny(frame, out_canny, thresh, thresh * 2);
 
-
-
-	// not used anymore:
-
-	// create approx polygons with closed curves
-	//vector<vector<Point> > contours_poly(contours.size());
-	//vector<Rect> boundRect(contours.size());
-	//vector<Point2f>centers(contours.size());
-
-	//for (size_t i = 0; i < contours.size(); i++)
-	//{
-	//	approxPolyDP(contours[i], contours_poly[i], 3, true);
-	//	boundRect[i] = boundingRect(contours_poly[i]);
-
-	//	drawContours(frame, contours_poly, (int)i, color);
-	//	rectangle(frame, boundRect[i].tl(), boundRect[i].br(), color, 2);
-	//}
 }
