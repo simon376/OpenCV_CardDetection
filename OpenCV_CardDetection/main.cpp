@@ -152,7 +152,7 @@ void save_cards()
 //TODO: only call this function when the number of detected cards change or 
 // if there is a significant change between two video frames to avoid unnecessary resource-heavy calculations
 // -- right now, it seems to run quite fast when not debugging, so don't worry yet
-String compare_to_known_images(const Mat& image) 
+Scalar compare_to_references(const Mat& image, String& card_name) 
 {
 	Scalar max_mssimV = Scalar(0,0,0);
 	double tresh = 0.75;
@@ -160,7 +160,7 @@ String compare_to_known_images(const Mat& image)
 	Mat hsv;
 	cvtColor(image, hsv, COLOR_BGR2HSV);
 	*/
-	String card_name = "unknown";
+	String name = "unknown";
 	// compare to every reference image
 	for (int i = 0; i < card_references.size(); i++) 
 	{
@@ -178,7 +178,7 @@ String compare_to_known_images(const Mat& image)
 			&& mssimV[0] > tresh && mssimV[1] > tresh&& mssimV[2] > tresh)
 		{
 			max_mssimV = mssimV;
-			card_name = fn;
+			name = fn;
 		}
 	}
 	// return name of the image with largest overlap, if above a certain threshold (50%)
@@ -188,7 +188,8 @@ String compare_to_known_images(const Mat& image)
 		<< " B " << setiosflags(ios::fixed) << setprecision(2) << max_mssimV.val[0] * 100 << "%";
 	cout << endl;
 
-	return card_name;
+	card_name = name;
+	return max_mssimV;
 }
 
 void setup_reference_images()
@@ -398,8 +399,9 @@ bool process_contour(const vector<Point>& contour)
 		//if (is_color(flatImage, Scalar(0, 120, 70), Scalar(10, 255, 255), Scalar(170, 120, 70), Scalar(180, 255, 255)))
 		//	textcolor = "red";
 
+		String card_name;
+		Scalar ssi = compare_to_references(flatImage, card_name);
 
-		String card_name = compare_to_known_images(flatImage);	
 		putText(frame,
 			card_name,
 			center, // Coordinates
