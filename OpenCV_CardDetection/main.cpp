@@ -41,6 +41,7 @@ bool isCaptureMode = false;
 
 vector<Mat> cards;
 vector<Mat> card_references;
+vector<String> filenames_card_references;
 
 void canny_threshold_callback(int, void*);
 void filter_cards(const Mat& image);
@@ -134,6 +135,8 @@ void save_cards()
 		ss << ref_folder << "/" << baseFilename << seconds << "_" << i << filetype;
 
 		// TODO: do some thresholding / image processing to improve picture
+	
+		// TODO: do some thresholding - save the images as black and white and check color "live" using the is_color function
 
 		// write the image
 		if (!imwrite(ss.str(), cards[i])) {
@@ -148,60 +151,61 @@ void save_cards()
 
 //TODO: only call this function when the number of detected cards change or 
 // if there is a significant change between two video frames to avoid unnecessary resource-heavy calculations
-bool compare_to_known_images(const Mat& image) 
+// -- right now, it seems to run quite fast when not debugging, so don't worry yet
+String compare_to_known_images(const Mat& image) 
 {
-//	double psnrV;
 	Scalar max_mssimV = Scalar(0,0,0);
-//	int psnrTriggerValue = 25;
+	double tresh = 0.75;
+	/* TEST - use HSV instead of BGR
+	Mat hsv;
+	cvtColor(image, hsv, COLOR_BGR2HSV);
+	*/
+	String card_name = "unknown";
 	// compare to every reference image
-	for (const auto& ref : card_references) 
+	for (int i = 0; i < card_references.size(); i++) 
 	{
-		// maybe resize to make sure its the same
-		// check overlap
+		const auto& ref = card_references.at(i);
+		const auto& fn = filenames_card_references.at(i);
+		/* TEST - use HSV instead of BGR
+		Mat hsv_ref;
+		cvtColor(ref, hsv_ref, COLOR_BGR2HSV);
+		Scalar mssimV = getMSSIM(hsv_ref, hsv);
+		*/
 
-		// return some value if it matches a known reference card good enough
-		
-		/* Adapted from OpenCV tutorial */
-
-		//psnrV = getPSNR(ref, image);
-		//cout << i << ": " << setiosflags(ios::fixed) << setprecision(3) << psnrV << "dB";
-
-		//if (psnrV < psnrTriggerValue && psnrV)
-		//{
 		Scalar mssimV = getMSSIM(ref, image);
-		//}
-		cout << endl;
-
-		if (mssimV[0] > max_mssimV[0] && mssimV[1] > max_mssimV[1] && mssimV[2] > max_mssimV[2]) 
+		
+		if (mssimV[0] > max_mssimV[0] && mssimV[1] > max_mssimV[1] && mssimV[2] > max_mssimV[2]
+			&& mssimV[0] > tresh && mssimV[1] > tresh&& mssimV[2] > tresh)
 		{
 			max_mssimV = mssimV;
+			card_name = fn;
 		}
 	}
-	// return index of the image with largest overlap, if above a certain threshold
-	// or return the string describing it or sth, no need for OO for this prototype
+	// return name of the image with largest overlap, if above a certain threshold (50%)
 	cout << " MSSIM: "
 		<< " R " << setiosflags(ios::fixed) << setprecision(2) << max_mssimV.val[2] * 100 << "%"
 		<< " G " << setiosflags(ios::fixed) << setprecision(2) << max_mssimV.val[1] * 100 << "%"
 		<< " B " << setiosflags(ios::fixed) << setprecision(2) << max_mssimV.val[0] * 100 << "%";
+	cout << endl;
 
-	if (max_mssimV[0] > 0.5 && max_mssimV[1] > 0.5 && max_mssimV[2] > 0.5)
-		return true;
-	else
-		return false;
+	return card_name;
 }
 
-// TODO: zip with file name or description to later print card name
 void setup_reference_images()
 {
 	// load all the reference images
 	card_references.clear();
+	filenames_card_references.clear();
 
-	vector<cv::String> fn;
-	glob((ref_folder + "/*.png"), fn, false);
-
-	size_t count = fn.size(); //number of png files in images folder
-	for (size_t i = 0; i < count; i++)
-		card_references.push_back(imread(fn[i]));
+	vector<cv::String> filenames;
+	glob((ref_folder + "/*.png"), filenames, false);
+	int front = ref_folder.length() + 1;
+	for (auto fn : filenames) {
+		card_references.push_back(imread(fn));
+		int length = fn.length() - front - 4;
+		String cardname = fn.substr(front,length);
+		filenames_card_references.push_back(cardname);
+	}
 }
 
 int main(int argc, char** argv)
@@ -389,22 +393,22 @@ bool process_contour(const vector<Point>& contour)
 		for (int i = 0; i < poly.size(); i++)
 			center += poly[i];
 		center *= (1. / poly.size());
-		String textcolor = "black";
+		//String textcolor = "black";
 		// test: check if red color, using two upper/lower limits
-		if (is_color(flatImage, Scalar(0, 120, 70), Scalar(10, 255, 255), Scalar(170, 120, 70), Scalar(180, 255, 255)))
-			textcolor = "red";
+		//if (is_color(flatImage, Scalar(0, 120, 70), Scalar(10, 255, 255), Scalar(170, 120, 70), Scalar(180, 255, 255)))
+		//	textcolor = "red";
 
+
+		String card_name = compare_to_known_images(flatImage);	
 		putText(frame,
-			textcolor,
+			card_name,
 			center, // Coordinates
 			FONT_HERSHEY_COMPLEX_SMALL, // Font
 			1.0, // Scale. 2.0 = 2x bigger
-			Scalar(0,0,0), // BGR Color
+			Scalar(0, 0, 0), // BGR Color
 			1, // Line Thickness (Optional)
 			LINE_AA); // Anti-alias (Optional)
 
-
-		compare_to_known_images(flatImage);	// TODO: return value which describes the corresponding card
 
 		cards.push_back(flatImage);
 
