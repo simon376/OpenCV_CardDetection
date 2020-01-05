@@ -1,5 +1,5 @@
 /*
-	main.cpp - Simon Müller, 09/12/19
+	main.cpp - Simon MÃ¼ller, Mateusz Roganowicz
 
 */
 #include <iostream>
@@ -19,7 +19,6 @@ using namespace cv;
 using namespace std;
 
 
-// TODO 
 double CARD_MAX_AREA = 120000;
 double CARD_MIN_AREA = 25000;
 
@@ -53,9 +52,8 @@ Mat flatten(vector <Point2f>& corners);
 bool is_color(const Mat& bgr_image, Scalar low, Scalar high, Scalar low2, Scalar high2);
 
 /*
-Both taken from official OpenCV docs tutorial:
+The following two methods where taken from the official OpenCV docs tutorial:
 https://docs.opencv.org/master/d5/dc4/tutorial_video_input_psnr_ssim.html
-
 */
 double getPSNR(const Mat& I1, const Mat& I2)
 {
@@ -134,10 +132,6 @@ void save_cards()
 		time(&seconds);
 		ss << ref_folder << "/" << baseFilename << seconds << "_" << i << filetype;
 
-		// TODO: do some thresholding / image processing to improve picture
-	
-		// TODO: do some thresholding - save the images as black and white and check color "live" using the is_color function
-
 		// write the image
 		if (!imwrite(ss.str(), cards[i])) {
 			cerr << "ERROR! Unable to write to path " << ss.str() << "\n";
@@ -149,29 +143,17 @@ void save_cards()
 
 }
 
-//TODO: only call this function when the number of detected cards change or 
-// if there is a significant change between two video frames to avoid unnecessary resource-heavy calculations
-// -- right now, it seems to run quite fast when not debugging, so don't worry yet
 Scalar compare_to_references(const Mat& image, String& card_name) 
 {
 	Scalar max_mssimV = Scalar(0,0,0);
 	double tresh = 0.75;
-	/* TEST - use HSV instead of BGR
-	Mat hsv;
-	cvtColor(image, hsv, COLOR_BGR2HSV);
-	*/
 	String name = "unknown";
 	// compare to every reference image
 	for (int i = 0; i < card_references.size(); i++) 
 	{
 		const auto& ref = card_references.at(i);
 		const auto& fn = filenames_card_references.at(i);
-		/* TEST - use HSV instead of BGR
-		Mat hsv_ref;
-		cvtColor(ref, hsv_ref, COLOR_BGR2HSV);
-		Scalar mssimV = getMSSIM(hsv_ref, hsv);
-		*/
-
+		// get structural similarity index
 		Scalar mssimV = getMSSIM(ref, image);
 		
 		if (mssimV[0] > max_mssimV[0] && mssimV[1] > max_mssimV[1] && mssimV[2] > max_mssimV[2]
@@ -275,9 +257,6 @@ int main(int argc, char** argv)
 		// reset the list of cards
 		cards.clear();
 
-		//greyscale
-		//cvtColor(frame, src_grey, COLOR_BGR2GRAY);
-
 		// Blur a bit
 		blur(frame, frame, Size(3, 3));
 		//use canny edge detection to filter edges
@@ -330,10 +309,11 @@ void filter_cards(const Mat& image)
 	//sort by contour area size
 	sort(contours.begin(), contours.end(), [](const vector<Point>& a, const vector<Point>& b) { return contourArea(a) > contourArea(b); });
 
-	// determine if they're cards by 3 criterias:
-	// 1 & 2) inside size bounds 3) no parents 4) four corners
 	for(const auto& contour : contours)
 	{
+		
+	// determine if they're cards by 2 criterias:
+	// 1) inside size bounds 4) four corners
 		if (process_contour(contour)) {
 			cardContours.push_back(contour);
 		}
@@ -366,7 +346,7 @@ bool is_color(const Mat& bgr_image, Scalar low, Scalar high, Scalar low2 = Scala
 	}
 	imshow("mask", mask);
 	
-	// random value > 0 used rn.. - if hue value exists aka mask is not empty
+	// Threshold value should be dialed in
 	if (sum(mask)[0] > IS_COLOR_THRESH)
 		return true;
 	else
@@ -389,13 +369,14 @@ bool process_contour(const vector<Point>& contour)
 		sort_corners(poly);
 		Mat flatImage = flatten(poly);
 		
-		// Get mass center
+		// Get "center of mass"
 		Point2f center(0, 0);
 		for (int i = 0; i < poly.size(); i++)
 			center += poly[i];
 		center *= (1. / poly.size());
+		
 		//String textcolor = "black";
-		// test: check if red color, using two upper/lower limits
+		// check if red color, using two upper/lower limits
 		//if (is_color(flatImage, Scalar(0, 120, 70), Scalar(10, 255, 255), Scalar(170, 120, 70), Scalar(180, 255, 255)))
 		//	textcolor = "red";
 
@@ -423,9 +404,6 @@ bool process_contour(const vector<Point>& contour)
 // sorts corners into bottomLeft, topLeft, topRight, bottomRight.
 void sort_corners(vector <Point2f>& corners)
 {
-	// there has to be a beter way than this
-
-
 	vector<Point2f> top, bot;
 	// Get mass center
 	Point2f center(0, 0);
